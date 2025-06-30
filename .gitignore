@@ -1,0 +1,22 @@
+# Log files and temp files
+logs/
+*.log
+*.tmp
+
+# Windows system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# PowerShell session history
+*.pshistory
+
+# VSCode settings
+.vscode/
+
+# Backup files
+*~
+*.bak
+
+# Others
+.DS_Store
