@@ -77,10 +77,11 @@ try {
 
 $totalCount = $rules.Count
 $successCount = 0
+$changedDisplayNames = @()
 
 Write-Log "Loaded $totalCount rule(s) from CSV."
 
-# Group rules by DisplayName, Protocol, RemoteAddress, Profile
+# Group rules by DisplayName, Protocol
 # 一つのグループの中に複数のLocalPortを含む:
 # Group 1: 
 #   DisplayName1, Protocol1, RemoteAddress1, Profile1
@@ -89,28 +90,25 @@ Write-Log "Loaded $totalCount rule(s) from CSV."
 #   DisplayName2, Protocol2, RemoteAddress2, Profile2
 #   Group: LocalPort1, LocalPort2, LocalPort3
 
-$grouped = $rules | Group-Object Name, Protocol, RemoteAddress, Profile
+$grouped = $rules | Group-Object Name, Protocol
 
 foreach ($group in $grouped) {
     $name = $group.Group[0].Name
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        Write-Log "Skipped rule with empty DisplayName." "ERROR"
+        continue
+    }
     $protocol = $group.Group[0].Protocol
-    $remoteAddress = $group.Group[0].RemoteAddress
-    $profile = $group.Group[0].Profile
     $direction = "Inbound"
     $action = "Allow"
-    $localPorts = ($group.Group | ForEach-Object { $_.LocalPort }) -join ","
+    $localPorts = ($group.Group | ForEach-Object { $_.LocalPort } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ","
 
-    # もし同じDisplayNameでremoteAddressやprofileが異なる場合はDisplayNameにsuffixを付与
     $displayName = $name
-    $groupCount = ($grouped | Where-Object { $_.Group[0].Name -eq $name }).Count
-    if ($groupCount -gt 1) {
-        $displayName = "${name}_${protocol}_${remoteAddress}_${profile}"
-    }
 
-    $existingRule = Get-NetFirewallRule -DisplayName $displayName -Direction $direction -ErrorAction SilentlyContinue
+    $existingRule = Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue
 
     if (-not $existingRule) {
-        $cmd = "New-NetFirewallRule -DisplayName `"$displayName`" -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts -RemoteAddress $remoteAddress -Profile $profile"
+        $cmd = "New-NetFirewallRule -DisplayName `"$displayName`" -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts"
         if ($TestMode) {
             Write-Log "[TestMode] $cmd"
         } else {
@@ -122,21 +120,19 @@ foreach ($group in $grouped) {
                 continue
             }
         }
-        $existingRule = Get-NetFirewallRule -DisplayName $displayName -Direction $direction -ErrorAction SilentlyContinue
+        $existingRule = Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue
+        $changedDisplayNames += $displayName
     }
 
     if ($existingRule) {
         if ($TestMode) {
-            Write-Log "[TestMode] Set-NetFirewallRule -DisplayName `"$displayName`" -Direction $direction -Action $action -Profile $profile"
-            Write-Log "[TestMode] Set-NetFirewallPortFilter -AssociatedNetFirewallRule (Get-NetFirewallRule -DisplayName `"$displayName`") -Protocol $protocol -LocalPort $localPorts"
-            Write-Log "[TestMode] Set-NetFirewallAddressFilter -AssociatedNetFirewallRule (Get-NetFirewallRule -DisplayName `"$displayName`") -RemoteAddress $remoteAddress"
+            Write-Log "[TestMode] Set-NetFirewallRule -DisplayName `"$displayName`" -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts"
         } else {
             try {
-                Set-NetFirewallRule -DisplayName $displayName -Direction $direction -Action $action -Profile $profile
-                Set-NetFirewallPortFilter -AssociatedNetFirewallRule $existingRule -Protocol $protocol -LocalPort $localPorts
-                Set-NetFirewallAddressFilter -AssociatedNetFirewallRule $existingRule -RemoteAddress $remoteAddress
+                Set-NetFirewallRule -DisplayName $displayName -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts
                 Write-Log "Updated rule: $displayName"
                 $successCount++
+                $changedDisplayNames += $displayName
             } catch {
                 Write-Log "Failed to update rule: $displayName - $($_.Exception.Message)" "ERROR"
             }
@@ -146,12 +142,14 @@ foreach ($group in $grouped) {
 
 Write-Log "Processed $totalCount rule(s). Successfully applied $successCount rule(s)."
 
-# Output current inbound rules
-Write-Log "Current inbound firewall rules:"
-$inboundRules = Get-NetFirewallRule -Direction Inbound | Sort-Object DisplayName
-foreach ($rule in $inboundRules) {
-    $portFilter = Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule
-    $addrFilter = Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule
-    $line = "{0,-30} {1,-7} {2,-6} {3,-8} {4,-8} {5,-10} {6}" -f $rule.DisplayName, $rule.Enabled, $rule.Action, $rule.Profile, $rule.Direction, $portFilter.LocalPort, $addrFilter.RemoteAddress
-    Write-Log $line
+# Output only changed inbound rule
+Write-Log "Changed inbound firewall rules:"
+foreach ($displayName in $changedDisplayNames | Select-Object -Unique) {
+    $rule = Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue
+    if ($rule) {
+        $portFilter = Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule
+        $addrFilter = Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule
+        $line = "{0,-30} {1,-7} {2,-6} {3,-8} {4,-8} {5,-10} {6}" -f $rule.DisplayName, $rule.Enabled, $rule.Action, $rule.Profile, $rule.Direction, $portFilter.LocalPort, $addrFilter.RemoteAddress
+        Write-Log $line
+    }
 }
