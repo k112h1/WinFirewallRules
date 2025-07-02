@@ -69,7 +69,7 @@ if (-not (Test-Path $CsvPath)) {
 }
 
 try {
-    $rules = Import-Csv -Path $CsvPath
+    $rules = Import-Csv -Path $CsvPath -Encoding UTF8
 } catch {
     Write-Log "Error reading CSV file: $($_.Exception.Message)" "ERROR"
     exit 1
@@ -109,9 +109,11 @@ foreach ($group in $grouped) {
 
     if (-not $existingRule) {
         $cmd = "New-NetFirewallRule -DisplayName `"$displayName`" -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts"
+        
         if ($TestMode) {
             Write-Log "[TestMode] $cmd"
         } else {
+            Write-Log $cmd
             try {
                 Invoke-Expression $cmd
                 Write-Log "Created rule: $displayName"
@@ -125,10 +127,13 @@ foreach ($group in $grouped) {
     }
 
     if ($existingRule) {
+        $setCmd = "Set-NetFirewallRule -DisplayName `"$displayName`" -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts"
         if ($TestMode) {
-            Write-Log "[TestMode] Set-NetFirewallRule -DisplayName `"$displayName`" -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts"
+            Write-Log "[TestMode] $setCmd"
         } else {
             try {
+                Write-Log $setCmd
+                # Update existing rule with new LocalPort
                 Set-NetFirewallRule -DisplayName $displayName -Direction $direction -Action $action -Protocol $protocol -LocalPort $localPorts
                 Write-Log "Updated rule: $displayName"
                 $successCount++
