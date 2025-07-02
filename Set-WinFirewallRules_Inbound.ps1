@@ -84,10 +84,10 @@ Write-Log "Loaded $totalCount rule(s) from CSV."
 # Group rules by DisplayName, Protocol
 # 一つのグループの中に複数のLocalPortを含む:
 # Group 1: 
-#   DisplayName1, Protocol1, RemoteAddress1, Profile1
+#   DisplayName1, Protocol1
 #   Group: LocalPort1, LocalPort2, LocalPort3
 # Group 2: 
-#   DisplayName2, Protocol2, RemoteAddress2, Profile2
+#   DisplayName2, Protocol2
 #   Group: LocalPort1, LocalPort2, LocalPort3
 
 $grouped = $rules | Group-Object Name, Protocol
